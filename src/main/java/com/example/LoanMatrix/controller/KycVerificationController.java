@@ -1,16 +1,19 @@
 package com.example.LoanMatrix.controller;
 
-import com.example.LoanMatrix.entity.KycDocument;
 
+import com.example.LoanMatrix.dto.KycVerification.KycDocumentResponse;
+import com.example.LoanMatrix.dto.KycVerification.KycUploadRequest;
+import com.example.LoanMatrix.entity.KycDocument;
 import com.example.LoanMatrix.response.ApiResponse;
 import com.example.LoanMatrix.service.KycVerification.KycVerificationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
+
 @RestController
-@RequestMapping("/kyc")
+@RequestMapping("/api/v1/kyc")
 public class KycVerificationController {
 
     private final KycVerificationService kycVerificationService;
@@ -20,85 +23,104 @@ public class KycVerificationController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<ApiResponse<KycDocument>> uploadDocument(
-            @RequestParam Long customerId,
-            @RequestParam String documentType,
-            @RequestParam MultipartFile filePath) {
+    public ResponseEntity<ApiResponse<KycDocumentResponse>> uploadDocument(
+            @ModelAttribute KycUploadRequest request) {
 
         KycDocument document = kycVerificationService.uploadDocument(
-                customerId, documentType, filePath);
+                request.getCustomerId(),
+                request.getDocumentType(),
+                request.getFile());
 
-        ApiResponse<KycDocument> response = ApiResponse.<KycDocument>builder()
-                .success(true)
-                .message("KYC document uploaded successfully")
-                .data(document)
-                .build();
+        KycDocumentResponse dto = convertToResponse(document);
+
+        ApiResponse<KycDocumentResponse> response =
+                ApiResponse.<KycDocumentResponse>builder()
+                        .success(true)
+                        .message("KYC document uploaded successfully")
+                        .data(dto)
+                        .build();
 
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/customer/{customerId}")
-    public ResponseEntity<ApiResponse<List<KycDocument>>> getCustomerDocuments(
+    public ResponseEntity<ApiResponse<List<KycDocumentResponse>>> getCustomerDocuments(
             @PathVariable Long customerId) {
 
         List<KycDocument> documents =
                 kycVerificationService.getCustomerDocuments(customerId);
 
-        ApiResponse<List<KycDocument>> response =
-                ApiResponse.<List<KycDocument>>builder()
+        List<KycDocumentResponse> responseList = new ArrayList<>();
+
+        for (KycDocument document : documents) {
+            responseList.add(convertToResponse(document));
+        }
+
+        ApiResponse<List<KycDocumentResponse>> response =
+                ApiResponse.<List<KycDocumentResponse>>builder()
                         .success(true)
                         .message("KYC documents fetched successfully")
-                        .data(documents)
+                        .data(responseList)
                         .build();
 
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/pending")
-    public ResponseEntity<ApiResponse<List<KycDocument>>> getPendingDocuments() {
+    public ResponseEntity<ApiResponse<List<KycDocumentResponse>>> getPendingDocuments() {
 
         List<KycDocument> documents =
                 kycVerificationService.getPendingDocuments();
 
-        ApiResponse<List<KycDocument>> response =
-                ApiResponse.<List<KycDocument>>builder()
+        List<KycDocumentResponse> responseList = new ArrayList<>();
+
+        for (KycDocument document : documents) {
+            responseList.add(convertToResponse(document));
+        }
+
+        ApiResponse<List<KycDocumentResponse>> response =
+                ApiResponse.<List<KycDocumentResponse>>builder()
                         .success(true)
                         .message("Pending KYC documents fetched successfully")
-                        .data(documents)
+                        .data(responseList)
                         .build();
 
         return ResponseEntity.ok(response);
     }
 
     @PutMapping("/{documentId}/approve")
-    public ResponseEntity<ApiResponse<KycDocument>> approveDocument(
+    public ResponseEntity<ApiResponse<KycDocumentResponse>> approveDocument(
             @PathVariable Long documentId) {
 
         KycDocument document =
                 kycVerificationService.approveDocument(documentId);
 
-        ApiResponse<KycDocument> response =
-                ApiResponse.<KycDocument>builder()
+        KycDocumentResponse dto = convertToResponse(document);
+
+        ApiResponse<KycDocumentResponse> response =
+                ApiResponse.<KycDocumentResponse>builder()
                         .success(true)
                         .message("KYC document approved successfully")
-                        .data(document)
+                        .data(dto)
                         .build();
 
         return ResponseEntity.ok(response);
     }
 
     @PutMapping("/{documentId}/reject")
-    public ResponseEntity<ApiResponse<KycDocument>> rejectDocument(
+    public ResponseEntity<ApiResponse<KycDocumentResponse>> rejectDocument(
             @PathVariable Long documentId) {
 
         KycDocument document =
                 kycVerificationService.rejectDocument(documentId);
 
-        ApiResponse<KycDocument> response =
-                ApiResponse.<KycDocument>builder()
+        KycDocumentResponse dto = convertToResponse(document);
+
+        ApiResponse<KycDocumentResponse> response =
+                ApiResponse.<KycDocumentResponse>builder()
                         .success(true)
                         .message("KYC document rejected successfully")
-                        .data(document)
+                        .data(dto)
                         .build();
 
         return ResponseEntity.ok(response);
@@ -107,9 +129,16 @@ public class KycVerificationController {
     @GetMapping("/document/{documentId}")
     public ResponseEntity<byte[]> viewDocument(
             @PathVariable Long documentId) {
-
         byte[] file = kycVerificationService.viewDocument(documentId);
-
         return ResponseEntity.ok(file);
+    }
+
+    private KycDocumentResponse convertToResponse(KycDocument document) {
+
+        return new KycDocumentResponse(
+                document.getId(),
+                document.getDocumentType(),
+                document.getVerificationStatus()
+        );
     }
 }
