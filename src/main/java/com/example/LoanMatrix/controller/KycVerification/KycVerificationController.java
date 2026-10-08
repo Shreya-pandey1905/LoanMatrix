@@ -1,4 +1,4 @@
-package com.example.LoanMatrix.controller;
+package com.example.LoanMatrix.controller.KycVerification;
 
 
 import com.example.LoanMatrix.dto.KycVerification.KycDocumentResponse;
