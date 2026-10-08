@@ -5,6 +5,7 @@ import com.example.LoanMatrix.entity.KycDocument;
 
 import com.example.LoanMatrix.repository.KycDocumentRepository.CustomerRepository;
 import com.example.LoanMatrix.repository.KycDocumentRepository.KycDocumentRepository;
+import com.example.LoanMatrix.service.Email.EmailService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
@@ -22,11 +23,13 @@ public class KycVerificationServiceImpl implements KycVerificationService {
 
     private final KycDocumentRepository kycDocumentRepository;
     private final CustomerRepository customerRepository;
+    private final EmailService emailService;
 
     public KycVerificationServiceImpl(KycDocumentRepository kycDocumentRepository,
-                                      CustomerRepository customerRepository) {
+                                      CustomerRepository customerRepository, EmailService emailService) {
         this.kycDocumentRepository = kycDocumentRepository;
         this.customerRepository = customerRepository;
+        this.emailService = emailService;
     }
 
     @Override
@@ -73,20 +76,44 @@ public class KycVerificationServiceImpl implements KycVerificationService {
     public KycDocument approveDocument(Long documentId) {
         KycDocument document = kycDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("KYC document not found"));
-
         document.setVerificationStatus("APPROVED");
+        KycDocument savedDocument = kycDocumentRepository.save(document);
+        emailService.sendKycStatusEmail(
+                document.getCustomer().getEmail(),
+                "KYC Document Approved",
+                """
+                <h2 style="color:green;">KYC Document Approved</h2>
+                <p>Hello,</p>
+                <p>Your KYC document has been <b>approved successfully.</b></p>
+                <p>Thank you!</p>
+                """
+        );
 
-        return kycDocumentRepository.save(document);
+        return savedDocument;
     }
 
     @Override
     public KycDocument rejectDocument(Long documentId) {
+
         KycDocument document = kycDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("KYC document not found"));
 
         document.setVerificationStatus("REJECTED");
 
-        return kycDocumentRepository.save(document);
+        KycDocument savedDocument = kycDocumentRepository.save(document);
+        emailService.sendKycStatusEmail(
+                document.getCustomer().getEmail(),
+                "KYC Document Rejected",
+                """
+                <h2 style="color:red;">KYC Document Rejected</h2>
+                <p>Hello,</p>
+                <p>Your KYC document has been <b>rejected.</b></p>
+                <p>Please upload a valid document.</p>
+                <p>Thank you!</p>
+                """
+        );
+
+        return savedDocument;
     }
 
     @Override
