@@ -11,4 +11,6 @@ public interface EmiSchedulerService {
     List<EmiSchedule> getSchedule(Long loanAccountId);
 
     void recalculateSchedule(Long loanAccountId);
+
+    void cancelFutureEmis(Long loanAccountId);
 }

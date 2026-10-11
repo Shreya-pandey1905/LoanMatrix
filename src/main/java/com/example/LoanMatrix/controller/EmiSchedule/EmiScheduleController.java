@@ -3,7 +3,6 @@ package com.example.LoanMatrix.controller.EmiSchedule;
 
 import com.example.LoanMatrix.entity.EmiSchedule;
 import com.example.LoanMatrix.service.EmiScheduler.EmiSchedulerService;
-import com.example.LoanMatrix.service.EmiScheduler.PenaltyChargeService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,21 +13,16 @@ import java.util.List;
 public class EmiScheduleController {
 
     private final EmiSchedulerService emiScheduleService;
-    private final PenaltyChargeService penaltyChargeService;
 
-    public EmiScheduleController(
-            EmiSchedulerService emiScheduleService,
-            PenaltyChargeService penaltyChargeService) {
 
+    public EmiScheduleController(EmiSchedulerService emiScheduleService) {
         this.emiScheduleService = emiScheduleService;
-        this.penaltyChargeService = penaltyChargeService;
     }
     @PostMapping("/schedule/{loanAccountId}")
     public ResponseEntity<List<EmiSchedule>> generateSchedule(
             @PathVariable Long loanAccountId) {
 
-        return ResponseEntity.ok(
-                emiScheduleService.generateSchedule(loanAccountId)
+        return ResponseEntity.ok(emiScheduleService.generateSchedule(loanAccountId)
         );
     }
 
@@ -49,13 +43,13 @@ public class EmiScheduleController {
 
         return ResponseEntity.ok("EMI schedule recalculated successfully");
     }
-
-    @PostMapping("/penalty/{loanAccountId}")
-    public ResponseEntity<String> createPenalty(
+    @PostMapping("/foreclosure/{loanAccountId}")
+    public ResponseEntity<String> cancelFutureEmis(
             @PathVariable Long loanAccountId) {
 
-        penaltyChargeService.checkAndCreatePenalty(loanAccountId);
+        emiScheduleService.cancelFutureEmis(loanAccountId);
 
-        return ResponseEntity.ok("Missed EMI penalty checked successfully");
+        return ResponseEntity.ok("Future EMIs cancelled successfully");
     }
+
 }

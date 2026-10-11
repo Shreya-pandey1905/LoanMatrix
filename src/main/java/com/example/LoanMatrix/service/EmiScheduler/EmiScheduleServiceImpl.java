@@ -3,6 +3,9 @@ package com.example.LoanMatrix.service.EmiScheduler;
 import com.example.LoanMatrix.entity.EmiSchedule;
 import com.example.LoanMatrix.entity.LoanAccount;
 
+import com.example.LoanMatrix.exception.InvalidLoanStatusException;
+import com.example.LoanMatrix.exception.ResourceNotFoundException;
+import com.example.LoanMatrix.exception.ScheduleAlreadyExistsException;
 import com.example.LoanMatrix.repository.EmiScheduleRepository.EmiScheduleRepository;
 import com.example.LoanMatrix.repository.EmiScheduleRepository.LoanAccountRepository;
 import org.springframework.stereotype.Service;
@@ -30,10 +33,10 @@ public class EmiScheduleServiceImpl implements EmiSchedulerService {
     public List<EmiSchedule> generateSchedule(Long loanAccountId) {
 
         LoanAccount loanAccount = loanAccountRepository.findById(loanAccountId)
-                .orElseThrow(() -> new RuntimeException("Loan account not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Loan account not found"));
 
         if (emiScheduleRepository.existsByLoanAccountId(loanAccountId)) {
-            throw new RuntimeException("EMI schedule already exists for this loan account");
+            throw new ScheduleAlreadyExistsException("EMI schedule already exists for this loan account");
         }
 
         BigDecimal outstandingPrincipal = loanAccount.getOutstandingPrincipal();
@@ -109,11 +112,12 @@ public class EmiScheduleServiceImpl implements EmiSchedulerService {
                 .findByLoanAccountIdOrderByInstallmentNoAsc(loanAccountId);
     }
 
+
     @Override
     public void recalculateSchedule(Long loanAccountId) {
 
         LoanAccount loanAccount = loanAccountRepository.findById(loanAccountId)
-                .orElseThrow(() -> new RuntimeException("Loan account not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Loan account not found"));
 
         List<EmiSchedule> schedules =
                 emiScheduleRepository.findByLoanAccountIdOrderByInstallmentNoAsc(
@@ -121,17 +125,79 @@ public class EmiScheduleServiceImpl implements EmiSchedulerService {
                 );
 
         BigDecimal outstandingPrincipal = loanAccount.getOutstandingPrincipal();
-        BigDecimal emi = loanAccount.getEmiAmount();
         BigDecimal annualInterestRate = loanAccount.getInterestRate();
 
         BigDecimal monthlyInterestRate = annualInterestRate
-                .divide(BigDecimal.valueOf(12), 10, RoundingMode.HALF_UP)
-                .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(1200), 10, RoundingMode.HALF_UP);
+
+        int lastPaidInstallment = 0;
+
+        for (EmiSchedule schedule : schedules) {
+            if ("PAID".equals(schedule.getPaymentStatus())) {
+                lastPaidInstallment = Math.max(
+                        lastPaidInstallment,
+                        schedule.getInstallmentNo()
+                );
+            }
+        }
+
+        int remainingMonths = 0;
+
+        for (EmiSchedule schedule : schedules) {
+            if (schedule.getInstallmentNo() > lastPaidInstallment
+                    && "PENDING".equals(schedule.getPaymentStatus())) {
+                remainingMonths++;
+            }
+        }
+
+        if (remainingMonths == 0) {
+            return;
+        }
+
+        if (outstandingPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
+            for (EmiSchedule schedule : schedules) {
+                if (schedule.getInstallmentNo() > lastPaidInstallment
+                        && "PENDING".equals(schedule.getPaymentStatus())) {
+                    schedule.setPaymentStatus("CANCELLED");
+                    schedule.setCancellationReason("Loan balance is fully repaid");
+                    schedule.setOpeningBalance(BigDecimal.ZERO);
+                    schedule.setInterestAmount(BigDecimal.ZERO);
+                    schedule.setPrincipalAmount(BigDecimal.ZERO);
+                    schedule.setEmi(BigDecimal.ZERO);
+                    schedule.setClosingBalance(BigDecimal.ZERO);
+                }
+            }
+
+            emiScheduleRepository.saveAll(schedules);
+            return;
+        }
+
+        BigDecimal newEmi;
+
+        if (monthlyInterestRate.compareTo(BigDecimal.ZERO) == 0) {
+            newEmi = outstandingPrincipal.divide(
+                    BigDecimal.valueOf(remainingMonths),
+                    2,
+                    RoundingMode.HALF_UP
+            );
+        } else {
+            BigDecimal onePlusRate = BigDecimal.ONE.add(monthlyInterestRate);
+            BigDecimal power = onePlusRate.pow(remainingMonths);
+
+            newEmi = outstandingPrincipal
+                    .multiply(monthlyInterestRate)
+                    .multiply(power)
+                    .divide(
+                            power.subtract(BigDecimal.ONE),
+                            2,
+                            RoundingMode.HALF_UP
+                    );
+        }
 
         for (EmiSchedule schedule : schedules) {
 
-            if ("PAID".equals(schedule.getPaymentStatus())) {
-                outstandingPrincipal = schedule.getClosingBalance();
+            if (schedule.getInstallmentNo() <= lastPaidInstallment
+                    || !"PENDING".equals(schedule.getPaymentStatus())) {
                 continue;
             }
 
@@ -141,9 +207,9 @@ public class EmiScheduleServiceImpl implements EmiSchedulerService {
                     .multiply(monthlyInterestRate)
                     .setScale(2, RoundingMode.HALF_UP);
 
-            BigDecimal principalAmount = emi.subtract(interestAmount);
+            BigDecimal principalAmount = newEmi.subtract(interestAmount);
 
-            if (principalAmount.compareTo(openingBalance) > 0) {
+            if (principalAmount.compareTo(openingBalance) >= 0) {
                 principalAmount = openingBalance;
             }
 
@@ -164,4 +230,32 @@ public class EmiScheduleServiceImpl implements EmiSchedulerService {
 
         emiScheduleRepository.saveAll(schedules);
     }
+
+
+    @Override
+    public void cancelFutureEmis(Long loanAccountId) {
+
+        LoanAccount loanAccount = loanAccountRepository.findById(loanAccountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Loan account not found"));
+
+        if (!"CLOSED".equalsIgnoreCase(loanAccount.getLoanStatus())) {
+            throw new InvalidLoanStatusException("Loan account is not closed");
+        }
+
+        List<EmiSchedule> schedules =
+                emiScheduleRepository.findByLoanAccountIdOrderByInstallmentNoAsc(
+                        loanAccountId
+                );
+
+        for (EmiSchedule schedule : schedules) {
+
+            if ("PENDING".equals(schedule.getPaymentStatus())) {
+                schedule.setPaymentStatus("CANCELLED");
+                schedule.setCancellationReason("Loan foreclosed");
+            }
+        }
+
+        emiScheduleRepository.saveAll(schedules);
+    }
+
 }
