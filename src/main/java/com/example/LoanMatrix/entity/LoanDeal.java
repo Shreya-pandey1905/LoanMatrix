@@ -1,6 +1,5 @@
 package com.example.LoanMatrix.entity;
 
-
 import jakarta.persistence.*;
 import lombok.*;
 
